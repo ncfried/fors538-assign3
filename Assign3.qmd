@@ -570,4 +570,103 @@ fig3 <- (resids_fitted+qq)/(scale_location+resid_leverage)+
   theme(plot.tag = element_text(face = 'bold'))
 fig3
 ```
+# Accuracy and Validation 
+## Model Validation: 10-Fold CV for ANPP ~ MAT × log(MAP)
+```{r}
 
+cross_valid_continuous <- function(model, data, response_col, k = 10, seed = NULL) {
+  if (!is.null(seed)) set.seed(seed)
+  stopifnot(response_col %in% names(data))
+
+  N <- nrow(data)
+  fold_id <- sample(rep(1:k, length.out = N))  # balanced folds
+
+  ME   <- numeric(k)
+  MAE  <- numeric(k)
+  RMSE <- numeric(k)
+
+  for (i in seq_len(k)) {
+    train_data <- data[fold_id != i, , drop = FALSE]
+    valid_data <- data[fold_id == i, , drop = FALSE]
+    if (nrow(valid_data) == 0L) { ME[i] <- MAE[i] <- RMSE[i] <- NA; next }
+
+    # Refit on training fold
+    fold_model <- update(model, data = train_data)
+
+    # Predict on validation fold (response scale)
+    preds <- predict(fold_model, newdata = valid_data, type = "response")
+    y     <- valid_data[[response_col]]
+
+    ME[i]   <- mean(preds - y)
+    MAE[i]  <- mean(abs(preds - y))
+    RMSE[i] <- sqrt(mean((preds - y)^2))
+  }
+
+  out <- data.frame(fold = 1:k, ME = ME, MAE = MAE, RMSE = RMSE)
+  attr(out, "summary") <- with(out, c(
+    ME_mean   = mean(ME,   na.rm = TRUE), ME_sd   = sd(ME,   na.rm = TRUE),
+    MAE_mean  = mean(MAE,  na.rm = TRUE), MAE_sd  = sd(MAE,  na.rm = TRUE),
+    RMSE_mean = mean(RMSE, na.rm = TRUE), RMSE_sd = sd(RMSE, na.rm = TRUE)
+  ))
+  out
+}
+
+
+# Your fitted model
+m1_log <- glm(ANPP ~ MAT*log(MAP), family = Gamma(link = "log"), data = anpp)
+
+cv_m1 <- cross_valid_continuous(
+  model = m1_log,  # <- your model
+  data         = anpp,    # <- your data frame
+  response_col = "ANPP",  # <- your response column name
+  k            = 10,
+  seed         = 1
+)
+
+summary(cv_m1)              # fold-by-fold summary
+attr(cv_m1, "summary")      # overall ME/MAE/RMSE means & SDs
+
+
+op <- par(mfrow = c(1,3), mar = c(4,3,2,1))
+boxplot(cv_m1$ME,   xlab = "ME",   col = gray(.5))
+boxplot(cv_m1$MAE,  xlab = "MAE",  col = gray(.5))
+boxplot(cv_m1$RMSE, xlab = "RMSE", col = gray(.5))
+par(op)
+```
+## Creating a training dataset and a validating dataset and running a linear regression to test for bias 
+This code randomly splits the full ANPP dataset into two parts: a training set (used to fit the model) and a validation set (used to test it). A linear regression model predicting ANPP from mean annual temperature (MAT) and log-transformed mean annual precipitation (log(MAP)) is first fitted using the training data. The fitted model is then used to generate predictions for the unseen validation data.
+
+A second regression of predicted vs. observed ANPP values evaluates model bias and accuracy:
+**Intercept:** 6.63 shows our model over predicts ANPP even when ANPP=0 the model predicts about 6.6 
+**Slope:** Every 1-unit increase in observed ANPP our model prediction only increases 0.3 units 
+**R2:** Only 29.36% of the variation in ANPP is explained by MAT*log(MAP) which is not very strong
+
+This model over predicts at low ANPP and under predicts at high ANPP suggesting limited predictive ability  
+```{r}
+n<-length(anpp[,1])
+samp<-sample(2,n,replace=T)
+data.valid<-cbind(samp,anpp)
+data.train<-subset(anpp,samp==1)
+data.valid<-subset(anpp,samp==2)
+
+# I am unsure whats better to make a traing lm() or glm()?? curious what you think 
+#test.lm <- lm(ANPP ~ MAT * log(MAP), data = data.train)
+
+test.glm <- glm(ANPP ~ MAT * log(MAP),
+                family = Gamma(link = "log"),
+                data = data.train)
+
+summary(test.glm)
+```
+## Obsvered vs predicted 
+**Notes for Sejal** curious what you think. Should the we run a glm or lm to predict the unknown data in the notes Solomon fits an linear regression
+```{r}
+pred_valid <- predict(test.glm, newdata = data.valid, type="response") #change test.lm and remove "response" here 
+lm.valid <- lm(pred_valid ~ data.valid$ANPP)
+summary(lm.valid)
+
+plot(data.valid$ANPP, pred_valid,
+     xlab = "Observed ANPP", ylab = "Predicted ANPP")
+abline(lm.valid, col = "blue")
+abline(0, 1, lty = 2, col = "gray")
+```
