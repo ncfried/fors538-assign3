@@ -633,7 +633,7 @@ boxplot(cv_m1$MAE,  xlab = "MAE",  col = gray(.5))
 boxplot(cv_m1$RMSE, xlab = "RMSE", col = gray(.5))
 par(op)
 ```
-## Creating a training dataset and a validating dataset and running a linear regression to test for bias 
+## Training/Validation Using Predicted vs. Observed Regression 
 This code randomly splits the full ANPP dataset into two parts: a training set (used to fit the model) and a validation set (used to test it). A linear regression model predicting ANPP from mean annual temperature (MAT) and log-transformed mean annual precipitation (log(MAP)) is first fitted using the training data. The fitted model is then used to generate predictions for the unseen validation data.
 
 A second regression of predicted vs. observed ANPP values evaluates model bias and accuracy:
@@ -658,7 +658,7 @@ test.glm <- glm(ANPP ~ MAT * log(MAP),
 
 summary(test.glm)
 ```
-## Obsvered vs predicted 
+### Observed vs Predited Scatter  
 **Notes for Sejal** curious what you think. Should the we run a glm or lm to predict the unknown data in the notes Solomon fits an linear regression
 ```{r}
 pred_valid <- predict(test.glm, newdata = data.valid, type="response") #change test.lm and remove "response" here 
@@ -666,7 +666,7 @@ lm.valid <- lm(pred_valid ~ data.valid$ANPP)
 summary(lm.valid)
 
 plot(data.valid$ANPP, pred_valid,
-     xlab = "Observed ANPP", ylab = "Predicted ANPP")
+     xlab = "Observed ANPP", ylab = "Predicted ANPP", main= "GLM Validation: Observed vs Predicted")
 abline(lm.valid, col = "blue")
 abline(0, 1, lty = 2, col = "gray")
 ```
